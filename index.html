@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor de Etiquetas Avançado</title>
+    <!-- Carrega a biblioteca Interact.js -->
+    <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
+    <!-- Carrega os ícones do Material Design -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            /* --- Variáveis de Layout --- */
+            --toolbar-height: 60px; /* Altura da barra de ferramentas principal */
+            --text-toolbar-height: 50px; /* Altura da barra de ferramentas de texto */
+            
+            /* --- Variáveis de Tamanho da Etiqueta (controladas por JS) --- */
+            /* Largura individual da etiqueta */
+            --label-width: 100mm;
+            /* Altura individual da etiqueta */
+            --label-height: 50mm;
+            /* Espaçamento horizontal entre etiquetas no modo duplo */
+            --label-gap: 5mm; 
+            
+            /* --- Variáveis de Impressão (controladas por JS) --- */
+            /* Largura padrão da página de impressão (será ajustada pelo JS) */
+            --print-page-width: var(--label-width);
+            /* Altura padrão da página de impressão (será ajustada pelo JS) */
+            --print-page-height: var(--label-height);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #F0F2F5; /* Cinza claro de fundo */
+            margin: 0;
+            /* Espaço para AMBAS as barras de ferramentas */
+            padding-top: calc(var(--toolbar-height) + var(--text-toolbar-height)); 
+            padding-bottom: 30px;
+        }
+
+        /* --- Barra de Ferramentas Fixa (Principal) --- */
+        #toolbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: var(--toolbar-height);
+            background-color: #FFFFFF; /* Fundo branco */
+            border-bottom: 1px solid #DADCE0; /* Borda sutil */
+            padding: 0 20px;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        
+        /* --- Barra de Ferramentas de Texto (Secundária) --- */
+        #text-toolbar-options {
+            position: fixed;
+            top: var(--toolbar-height); /* Posicionada abaixo da principal */
+            left: 0;
+            width: 100%;
+            height: var(--text-toolbar-height);
+            background-color: #f8f9fa; /* Fundo levemente acinzentado */
+            border-bottom: 1px solid #DADCE0;
+            padding: 0 20px;
+            box-sizing: border-box;
+            display: flex; /* Será alterado para 'flex' pelo JS quando ativa */
+            justify-content: flex-start; /* Alinha à esquerda */
+            align-items: center;
+            z-index: 99; /* Abaixo da principal, acima do conteúdo */
+            gap: 15px;
+            overflow-x: auto; /* Permite rolagem se não couber */
+        }
+
+
+        .toolbar-section {
+            display: flex;
+            align-items: center;
+            gap: 15px; /* Espaçamento entre grupos de botões */
+        }
+
+        .button-group {
+            display: flex;
+            align-items: center;
+            gap: 8px; /* Espaçamento entre botões no mesmo grupo */
+        }
+
+
+        #toolbar .label, #text-toolbar-options .label {
+            font-size: 0.9em;
+            color: #5f6368; /* Cinza escuro para texto */
+            margin-right: 5px;
+            white-space: nowrap;
+        }
+
+        /* Estilo comum para botões e selects */
+        #toolbar button,
+        #toolbar select,
+        #text-toolbar-options button,
+        #text-toolbar-options select,
+        #text-toolbar-options input[type="number"] {
+            background-color: #f8f9fa; /* Fundo cinza claro */
+            border: 1px solid #DADCE0; /* Borda sutil */
+            color: #3c4043; /* Cor do texto */
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: inline-flex; /* Para alinhar ícone e texto */
+            align-items: center;
+            gap: 5px; /* Espaço entre ícone e texto */
+            font-size: 0.9em;
+            transition: background-color 0.2s, box-shadow 0.2s;
+            height: 36px; /* Altura fixa para alinhar */
+            box-sizing: border-box;
+            white-space: nowrap; /* Evita quebra de linha */
+        }
+        
+        /* Botões de ícone (Negrito, Itálico, etc.) */
+        #text-toolbar-options button {
+             padding: 8px; /* Mais quadrado */
+             min-width: 36px;
+             justify-content: center;
+        }
+        
+        /* Input de tamanho da fonte */
+        #text-toolbar-options input[type="number"] {
+            width: 70px; /* Largura fixa */
+            padding-right: 5px;
+        }
+        
+        /* Input de Cor */
+        #input-font-color {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border: 1px solid #DADCE0;
+            border-radius: 4px;
+            background-color: transparent; /* Fundo transparente */
+            cursor: pointer;
+            overflow: hidden; /* Esconde o seletor interno feio */
+        }
+        /* Estiliza o seletor de cor interno */
+        #input-font-color::-webkit-color-swatch-wrapper {
+            padding: 2px; /* Pequena borda interna */
+            border: none;
+        }
+        #input-font-color::-webkit-color-swatch {
+            border: 1px solid #bdbdbd;
+            border-radius: 2px;
+        }
+        /* Firefox */
+         #input-font-color::-moz-color-swatch {
+             border: 1px solid #bdbdbd;
+            border-radius: 2px;
+         }
+
+
+        #toolbar select, #text-toolbar-options select {
+            /* Estilos específicos para o select */
+            -webkit-appearance: none; /* Remove aparência padrão */
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%2D%2Dxmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2D%2Dwidth%3D%22292.4%22%2D%2Dheight%3D%22292.4%22%3E%3Cpath%2D%2Dfill%3D%22%235f6368%22%2D%2Dd%3D%22M287%2D%2D69.4a17.6%2D%2D17.6%2D%2D0%2D%2D0%2D%2D0-13-5.4H18.4c-5%2D%2D0-9.3%2D%2D1.8-12.9%2D%2D5.4A17.6%2D%2D17.6%2D%2D0%2D%2D0%2D%2D0%2D%2D0%2D%2D82.2c0%2D%2D5%2D%2D1.8%2D%2D9.3%2D%2D5.4%2D%2D12.9l128%2D%2D127.9c3.6%2D%2D3.6%2D%2D7.8%2D%2D5.4%2D%2D12.8%2D%2D5.4s9.2-1.8%2D%2D12.8-5.4L287%2D%2D95c3.5-3.5%2D%2D5.4-7.8%2D%2D5.4-12.8%2D%2D0-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            background-size: 8px 10px;
+            padding-right: 30px; /* Espaço para a seta */
+        }
+
+        /* Efeitos de Hover e Active */
+        #toolbar button:hover,
+        #toolbar select:hover,
+        #text-toolbar-options button:hover,
+        #text-toolbar-options select:hover,
+        #text-toolbar-options input:hover {
+            background-color: #f1f3f4; /* Cinza um pouco mais escuro no hover */
+            border-color: #c6cacf;
+        }
+
+        #toolbar button:active,
+        #text-toolbar-options button:active {
+            background-color: #e8eaed;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+        }
+        
+        /* Estilo para botão de texto ATIVO (Negrito, Itálico, etc.) */
+        #text-toolbar-options button.active {
+             background-color: #e8eaed; /* Cor de fundo ativa */
+             box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+             border-color: #1a73e8; /* Borda azul sutil */
+        }
+        #text-toolbar-options button.active .material-icons {
+            color: #1a73e8; /* Cor do ícone ativa */
+        }
+
+
+        #toolbar .material-icons,
+        #text-toolbar-options .material-icons {
+            font-size: 18px; /* Tamanho dos ícones */
+            color: #5f6368;
+            vertical-align: middle;
+        }
+
+        /* --- Página de Impressão e Etiquetas --- */
+        #pagina-de-impressao {
+            /* Define a largura máxima para o modo simples inicialmente */
+            /* A largura máxima será ajustada via JS para o modo duplo */
+            max-width: var(--label-width);
+            margin: 30px auto;
+            display: flex;
+            flex-wrap: wrap; /* Permite que as etiquetas quebrem a linha */
+            /* Remove gap geral para controle mais preciso com margens */
+            justify-content: center; /* Centraliza no modo simples */
+            transition: max-width 0.3s ease-in-out; /* Anima a mudança de largura */
+        }
+
+        /* Estilo para layout simples (adiciona espaço entre linhas) */
+        #pagina-de-impressao:not(.layout-dupla) .etiqueta-editavel {
+            margin-bottom: 10px;
+        }
+
+        /* Estilo para layout duplo */
+        #pagina-de-impressao.layout-dupla {
+            /* Garante que o container tenha largura suficiente para duas etiquetas + gap */
+            /* O JS definirá --print-page-width corretamente */
+            max-width: var(--print-page-width);
+            justify-content: flex-start; /* Alinha à esquerda no modo dupla */
+            gap: 10px 0; /* Espaço vertical entre as linhas de pares */
+        }
+        #pagina-de-impressao.layout-dupla .etiqueta-editavel {
+            margin-right: var(--label-gap); /* Adiciona espaço à direita da primeira etiqueta do par */
+            margin-bottom: 0; /* Remove margem inferior padrão no modo duplo */
+        }
+        /* Remove a margem da segunda etiqueta de cada par */
+        #pagina-de-impressao.layout-dupla .etiqueta-editavel:nth-child(2n) {
+            margin-right: 0;
+        }
+
+
+        .etiqueta-editavel {
+            width: var(--label-width);
+            height: var(--label-height);
+            background-color: #FFFFFF;
+            border: 1px solid #DADCE0;
+            position: relative; /* Necessário para posicionar itens internos */
+            overflow: hidden; /* Evita que itens saiam da etiqueta */
+            cursor: default; /* Cursor padrão para a etiqueta */
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: border-color 0.2s, box-shadow 0.2s, width 0.3s ease-in-out, height 0.3s ease-in-out; /* Adiciona transição de tamanho */
+            page-break-inside: avoid; /* Evita que a etiqueta quebre entre páginas na impressão */
+            page-break-after: auto;
+            flex-shrink: 0; /* Impede que as etiquetas encolham no flex container */
+            box-sizing: border-box; /* Garante que padding/border não aumentem o tamanho */
+        }
+
+        .etiqueta-editavel.active {
+            border-color: #1a73e8; /* Borda azul para indicar ativa */
+            box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.3); /* Sombra sutil azul */
+        }
+
+        /* --- Itens Arrastáveis e Redimensionáveis --- */
+        .item-arrastavel {
+            position: absolute; /* Permite posicionamento livre */
+            min-width: 20px;
+            min-height: 20px;
+            border: 1px dashed transparent; /* Borda sutil que aparece no hover/seleção */
+            box-sizing: border-box; /* Inclui a borda no tamanho */
+            cursor: grab;
+            touch-action: none; /* Otimização para toque */
+            user-select: none; /* Evita seleção de texto ao arrastar */
+        }
+
+        .item-arrastavel:hover {
+            border-color: #1a73e8; /* Borda azul no hover */
+        }
+        
+        /* Destaque para remoção (borda vermelha) */
+        .item-arrastavel.selecionado-para-remocao {
+            outline: 2px solid red;
+            z-index: 11; /* Acima do destaque de hover */
+        }
+
+
+        .item-arrastavel.interactjs-dragging,
+        .item-arrastavel.interactjs-resizing {
+            border-color: #1a73e8;
+            border-style: solid;
+            opacity: 0.8;
+            z-index: 10; /* Fica acima de outros itens durante a interação */
+        }
+
+        /* --- Tipos de Itens Específicos --- */
+        .item-texto {
+            border: 1px dashed #cccccc; /* Borda padrão para texto */
+            padding: 2px; /* Pequeno espaçamento interno */
+            overflow: hidden; /* Esconde texto que excede o tamanho */
+            white-space: pre-wrap; /* Mantém quebras de linha e espaços */
+            word-wrap: break-word; /* Quebra palavras longas */
+            line-height: 1.2;
+            cursor: text; /* Cursor de texto quando editável */
+            user-select: text; /* Permite seleção de texto interno */
+        }
+        .item-texto:focus {
+             outline: 1px solid #1a73e8;
+             border-style: solid;
+             cursor: text;
+        }
+
+        .item-imagem {
+            background-size: contain; /* Ajusta a imagem ao tamanho do container */
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+        .item-imagem img { /* Garante que a imagem preencha o container */
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain; /* Mantém proporção sem cortar */
+        }
+
+        .item-forma {
+            background-color: #e0e0e0; /* Cor padrão para a forma */
+            border: 1px solid #bdbdbd;
+        }
+
+        /* --- Estilos de Impressão --- */
+        /* Estilo dinâmico para @page será injetado via JS */
+        #print-style-dynamic { display: none; } /* Oculta na tela */
+
+        @media print {
+            body {
+                background-color: #FFFFFF;
+                padding: 0;
+                margin: 0;
+                width: var(--print-page-width) !important; /* Força a largura do body na impressão */
+            }
+
+            #toolbar, #text-toolbar-options {
+                display: none; /* Esconde AMBAS as barras de ferramentas */
+            }
+
+            #pagina-de-impressao {
+                margin: 0 !important;
+                padding: 0 !important;
+                max-width: none !important;
+                gap: 0 !important; /* Remove espaço entre etiquetas na impressão */
+                /* Mantém o flex wrap para o layout duplo */
+                display: flex !important;
+                flex-wrap: wrap !important;
+                justify-content: flex-start !important; /* Garante alinhamento à esquerda */
+                width: var(--print-page-width) !important; /* Força a largura na impressão */
+            }
+
+            /* No layout duplo, ajusta margens para impressão */
+            #pagina-de-impressao.layout-dupla .etiqueta-editavel {
+                margin-right: var(--label-gap) !important;
+                page-break-after: avoid !important; /* Evita quebra após a primeira etiqueta do par */
+                border: none !important; /* Força remoção da borda visível */
+                box-shadow: none !important;
+                display: inline-block !important; /* Tenta forçar lado a lado */
+                vertical-align: top !important;
+            }
+            #pagina-de-impressao.layout-dupla .etiqueta-editavel:nth-child(2n) {
+                margin-right: 0 !important;
+                page-break-after: always !important; /* Quebra a página APÓS o par */
+            }
+            /* Garante que a última linha não tenha quebra desnecessária */
+            #pagina-de-impressao.layout-dupla .etiqueta-editavel:last-child {
+                page-break-after: avoid !important;
+            }
+            /* Evita quebra se for a segunda de um par ímpar no final */
+            #pagina-de-impressao.layout-dupla .etiqueta-editavel:nth-child(odd):last-child {
+                page-break-after: avoid !important;
+            }
+
+
+            /* Layout simples (uma por linha) */
+            #pagina-de-impressao:not(.layout-dupla) .etiqueta-editavel {
+                page-break-after: always;
+                margin-right: 0 !important; /* Garante sem margem extra */
+                margin-bottom: 0 !important;
+            }
+            #pagina-de-impressao:not(.layout-dupla) .etiqueta-editavel:last-child {
+                page-break-after: avoid;
+            }
+
+
+            .etiqueta-editavel {
+                border: none !important; /* Remove bordas na impressão */
+                box-shadow: none !important;
+                margin-bottom: 0 !important; /* Remove margem inferior padrão na impressão */
+                /* page-break-after é controlado pelas regras acima */
+            }
+
+            .item-arrastavel {
+                border-color: transparent !important; /* Esconde bordas dos itens */
+                outline: none !important; /* Remove outline de seleção */
+            }
+
+            /* #print-style-dynamic { display: block !important; } */ /* REMOVIDO: Esta linha causava o bug */
+
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Barra de Ferramentas Principal -->
+    <div id="toolbar">
+        <div class="toolbar-section">
+            <div class="button-group">
+                <button id="btn-add-etiqueta" title="Adicionar nova etiqueta à página">
+                    <span class="material-icons">add_to_queue</span> Nova Etiqueta
+                </button>
+                <button id="btn-imprimir" title="Imprimir página">
+                    <span class="material-icons">print</span> Imprimir
+                </button>
+                <select id="select-tamanho-etiqueta" title="Selecionar tamanho e layout da etiqueta">
+                    <option value="100x50" selected>100 x 50 mm (Simples)</option>
+                    <option value="50x25">50 x 25 mm (Simples)</option>
+                    <option value="50x25-dupla">50 x 25 mm (Dupla)</option>
+                    <!-- Adicionar mais tamanhos aqui se necessário -->
+                </select>
+            </div>
+        </div>
+        <div class="toolbar-section">
+            <div class="button-group">
+                <span class="label">Adicionar à etiqueta selecionada:</span>
+                <button id="btn-add-texto" title="Adicionar caixa de texto">
+                    <span class="material-icons">title</span> Texto
+                </button>
+                <button id="btn-add-imagem" title="Adicionar imagem">
+                    <span class="material-icons">image</span> Imagem
+                </button>
+                <button id="btn-add-quadrado" title="Adicionar forma (Quadrado)">
+                    <span class="material-icons">check_box_outline_blank</span> Forma
+                </button>
+                <button id="btn-remover-item" title="Remover item selecionado">
+                    <span class="material-icons">delete</span> Remover Item
+                </button>
+            </div>
+        </div>
+        <!-- Input oculto para upload de imagem -->
+        <input type="file" id="input-imagem" accept="image/*" style="display: none;">
+    </div>
+    
+    <!-- Barra de Ferramentas de Formatação de Texto (Oculta por padrão) -->
+    <div id="text-toolbar-options" style="display: none;">
+        <div class="button-group">
+            <select id="select-font-family" title="Tipo de Fonte">
+                <option value="Arial, sans-serif">Arial</option>
+                <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                <option value="'Courier New', Courier, monospace">Courier New</option>
+                <option value="Verdana, Geneva, sans-serif">Verdana</option>
+                <option value="Georgia, serif">Georgia</option>
+            </select>
+            
+            <input type="number" id="input-font-size" min="6" max="72" value="10" title="Tamanho da Fonte (px)">
+            
+            <input type="color" id="input-font-color" value="#000000" title="Cor da Fonte">
+        </div>
+        
+        <div class="button-group">
+            <button id="btn-text-bold" title="Negrito">
+                <span class="material-icons">format_bold</span>
+            </button>
+            <button id="btn-text-italic" title="Itálico">
+                <span class="material-icons">format_italic</span>
+            </button>
+            <button id="btn-text-underline" title="Sublinhado">
+                <span class="material-icons">format_underlined</span>
+            </button>
+            <button id="btn-text-strike" title="Tachado">
+                <span class="material-icons">strikethrough_s</span>
+            </button>
+        </div>
+        
+        <div class="button-group">
+            <select id="select-text-transform" title="Transformação do Texto">
+                <option value="none">Normal</option>
+                <option value="uppercase">MAIÚSCULAS</option>
+                <option value="lowercase">minúsculas</option>
+                <option value="capitalize">Capitalizadas</option>
+            </select>
+        </div>
+    </div>
+
+
+    <!-- Página de Impressão -->
+    <div id="pagina-de-impressao">
+        <!-- A primeira etiqueta é adicionada por padrão -->
+        <div class="etiqueta-editavel active" data-label-id="label-1">
+            <!-- Itens arrastáveis serão adicionados aqui -->
+        </div>
+    </div>
+    <!-- Estilo dinâmico para impressão -->
+    <style id="print-style-dynamic"></style>
+
+    <script>
+        // --- Referências DOM (Elementos Principais) ---
+        const paginaDeImpressao = document.getElementById('pagina-de-impressao');
+        const toolbar = document.getElementById('toolbar');
+        const btnAddEtiqueta = document.getElementById('btn-add-etiqueta');
+        const btnImprimir = document.getElementById('btn-imprimir');
+        const btnAddTexto = document.getElementById('btn-add-texto');
+        const btnAddImagem = document.getElementById('btn-add-imagem');
+        const btnAddQuadrado = document.getElementById('btn-add-quadrado');
+        const btnRemoverItem = document.getElementById('btn-remover-item');
+        const inputImagem = document.getElementById('input-imagem');
+        const selectTamanhoEtiqueta = document.getElementById('select-tamanho-etiqueta');
+        const printStyleDynamic = document.getElementById('print-style-dynamic');
+
+        // --- Referências DOM (Barra de Ferramentas de Texto) ---
+        const textToolbarOptions = document.getElementById('text-toolbar-options');
+        const selectFontFamily = document.getElementById('select-font-family');
+        const inputFontSize = document.getElementById('input-font-size');
+        const inputFontColor = document.getElementById('input-font-color');
+        const btnTextBold = document.getElementById('btn-text-bold');
+        const btnTextItalic = document.getElementById('btn-text-italic');
+        const btnTextUnderline = document.getElementById('btn-text-underline');
+        const btnTextStrike = document.getElementById('btn-text-strike');
+        const selectTextTransform = document.getElementById('select-text-transform');
+
+        // --- Variáveis de Estado ---
+        let etiquetaAtiva = document.querySelector('.etiqueta-editavel.active'); // Começa com a primeira
+        let itemSelecionado = null; // Guarda o item selecionado (para remoção E edição)
+        let labelCounter = 1; // Contador para IDs únicos de etiquetas
+        let itemCounter = 0; // Contador para IDs únicos de itens
+        let tamanhoAtualEtiqueta = { width: '100mm', height: '50mm' }; // Tamanho individual
+        let layoutAtual = 'simples'; // 'simples' ou 'dupla'
+
+        // --- Funções Auxiliares ---
+
+        // Define a etiqueta ativa
+        function definirEtiquetaAtiva(etiqueta) {
+            if (etiquetaAtiva) {
+                etiquetaAtiva.classList.remove('active');
+            }
+            etiquetaAtiva = etiqueta;
+            if (etiquetaAtiva) {
+                etiquetaAtiva.classList.add('active');
+            }
+            // Limpa a seleção de item ao trocar de etiqueta
+            desselecionarItem();
+        }
+
+        // Gera um ID único para itens
+        function gerarItemId() {
+            itemCounter++;
+            return `item-${itemCounter}`;
+        }
+        // Gera um ID único para etiquetas
+        function gerarLabelId() {
+            labelCounter++;
+            return `label-${labelCounter}`;
+        }
+
+        // Seleciona um item (para remoção e edição)
+        function selecionarItem(itemElement) {
+            desselecionarItem(); // Desseleciona qualquer item anterior
+            itemSelecionado = itemElement;
+            
+            if (itemSelecionado) {
+                // Destaque visual para remoção
+                itemSelecionado.classList.add('selecionado-para-remocao'); 
+                btnRemoverItem.style.display = 'inline-flex'; // Mostra botão de remover
+
+                // Lógica da barra de ferramentas de texto
+                if (itemSelecionado.classList.contains('item-texto')) {
+                    textToolbarOptions.style.display = 'flex'; // Mostra a barra
+                    updateTextToolState(); // Popula os controles com o estilo atual
+                } else {
+                    textToolbarOptions.style.display = 'none'; // Esconde se não for texto
+                }
+            }
+            // Se itemSelecionado for null (o que não deveria acontecer aqui, mas por segurança)
+            else {
+                 btnRemoverItem.style.display = 'none'; // Esconde botão
+                 textToolbarOptions.style.display = 'none'; // Esconde barra de texto
+            }
+        }
+
+        // Desseleciona o item atual
+        function desselecionarItem() {
+            if (itemSelecionado) {
+                itemSelecionado.classList.remove('selecionado-para-remocao');
+            }
+            itemSelecionado = null;
+            btnRemoverItem.style.display = 'none';
+            textToolbarOptions.style.display = 'none'; // Sempre esconde a barra de texto ao desselecionar
+        }
+        
+        // Converte cor RGB (ex: "rgb(0, 0, 0)") para Hex (ex: "#000000")
+        function rgbToHex(rgb) {
+            if (!rgb || !rgb.startsWith('rgb')) return rgb; // Retorna se já for hex ou inválido
+            
+            let match = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+            if (!match) return '#000000'; // Padrão
+
+            function hex(c) {
+                return ('0' + parseInt(c).toString(16)).slice(-2);
+            }
+            return '#' + hex(match[1]) + hex(match[2]) + hex(match[3]);
+        }
+
+
+        // --- Funções de Gerenciamento de Layout e Tamanho ---
+        function definirLayoutETamanho(layoutValue) {
+            let width, height, printWidth, printHeight, pageMaxWidth;
+            const rootStyle = document.documentElement.style;
+
+            if (layoutValue === '100x50') {
+                layoutAtual = 'simples';
+                width = '100mm';
+                height = '50mm';
+                printWidth = width;
+                printHeight = height;
+                pageMaxWidth = width; // Largura do container = largura da etiqueta
+                paginaDeImpressao.classList.remove('layout-dupla');
+            } else if (layoutValue === '50x25') {
+                layoutAtual = 'simples';
+                width = '50mm';
+                height = '25mm';
+                printWidth = width;
+                printHeight = height;
+                pageMaxWidth = width; // Largura do container = largura da etiqueta
+                paginaDeImpressao.classList.remove('layout-dupla');
+            } else if (layoutValue === '50x25-dupla') {
+                layoutAtual = 'dupla';
+                width = '50mm'; // Tamanho individual da etiqueta
+                height = '25mm';
+                // Largura total da página de impressão/container (considerando o gap)
+                printWidth = `calc(2 * ${width} + var(--label-gap))`;
+                printHeight = height;
+                pageMaxWidth = printWidth; // Largura do container = largura da impressão
+                paginaDeImpressao.classList.add('layout-dupla');
+            } else {
+                console.error("Layout inválido:", layoutValue);
+                return;
+            }
+
+            tamanhoAtualEtiqueta = { width, height };
+            // Atualiza variáveis CSS para redimensionar visualmente
+            rootStyle.setProperty('--label-width', width);
+            rootStyle.setProperty('--label-height', height);
+            // Atualiza tamanho da PÁGINA de impressão (para @page)
+            rootStyle.setProperty('--print-page-width', printWidth);
+            rootStyle.setProperty('--print-page-height', printHeight);
+            // Atualiza largura MÁXIMA do container na tela
+            paginaDeImpressao.style.maxWidth = pageMaxWidth;
+
+            // Atualiza o estilo de impressão dinâmico para @page
+            printStyleDynamic.innerHTML = `@media print { @page { size: ${printWidth} ${printHeight}; margin: 0; } }`;
+
+            console.log(`Layout definido: ${layoutAtual}, Tamanho etiqueta: ${width}x${height}, Tamanho Pág. Impressão/Container: ${printWidth}x${printHeight}`);
+        }
+
+
+        // --- Funções de Adição de Itens ---
+
+        // Adiciona uma nova etiqueta
+        function adicionarEtiqueta() {
+            const novaEtiqueta = document.createElement('div');
+            novaEtiqueta.classList.add('etiqueta-editavel');
+            novaEtiqueta.dataset.labelId = gerarLabelId();
+            // Aplica o tamanho atual (já definido pelas variáveis CSS)
+            paginaDeImpressao.appendChild(novaEtiqueta);
+            definirEtiquetaAtiva(novaEtiqueta);
+        }
+
+        // Adiciona um item genérico (configura posição, tamanho e interação)
+        function adicionarItem(etiqueta, tipo, conteudo = null) {
+            if (!etiqueta) {
+                // Simula um modal de alerta
+                alertPersonalizado("Selecione uma etiqueta primeiro!");
+                return;
+            }
+
+            const item = document.createElement('div');
+            item.classList.add('item-arrastavel', `item-${tipo}`);
+            item.id = gerarItemId();
+            // Posição inicial relativa ao tamanho da etiqueta atual
+            const etiquetaRect = etiqueta.getBoundingClientRect();
+            // Evita erro se a etiqueta não tiver dimensões ainda
+            const etiquetaWidth = etiquetaRect.width || parseFloat(tamanhoAtualEtiqueta.width) || 100;
+            const etiquetaHeight = etiquetaRect.height || parseFloat(tamanhoAtualEtiqueta.height) || 50;
+
+            const startX = Math.min(10, etiquetaWidth * 0.1);
+            const startY = Math.min(10, etiquetaHeight * 0.1);
+            // Tamanho inicial relativo
+            const startWidth = Math.max(50, etiquetaWidth * 0.3);
+            const startHeightForma = Math.max(50, etiquetaHeight * 0.3);
+            const startHeightOutros = Math.max(30, etiquetaHeight * 0.2);
+
+
+            item.style.left = `${startX}px`; // Posição inicial (será substituído por transform)
+            item.style.top = `${startY}px`;  // Posição inicial (será substituído por transform)
+            item.style.width = `${startWidth}px`; // Tamanho inicial
+            item.style.height = tipo === 'forma' ? `${startHeightForma}px` : `${startHeightOutros}px`; // Altura diferente para forma
+            item.dataset.x = startX;
+            item.dataset.y = startY;
+            item.style.transform = `translate(${startX}px, ${startY}px)`; // Usa transform para posição
+
+            if (tipo === 'texto') {
+                item.contentEditable = 'true'; // Torna o texto editável
+                item.textContent = conteudo || 'Edite aqui';
+                item.style.height = 'auto'; // Altura automática para texto
+                item.style.minHeight = '20px'; // Altura mínima
+                item.style.fontSize = '10px'; // Tamanho de fonte inicial pequeno
+                item.style.fontFamily = 'Arial, sans-serif'; // Fonte padrão
+                item.style.color = '#000000'; // Cor padrão
+            } else if (tipo === 'imagem' && conteudo) {
+                const img = document.createElement('img');
+                img.src = conteudo;
+                img.style.width = '100%';
+                img.style.height = '100%';
+                img.style.objectFit = 'contain'; // Garante que a imagem caiba
+                img.draggable = false; // Impede arrastar nativo da imagem
+                item.appendChild(img);
+                item.style.height = `${startHeightForma}px`; // Tamanho inicial maior para imagem
+            } else if (tipo === 'forma') {
+                item.style.backgroundColor = '#d3d3d3'; // Cinza claro padrão
+            }
+
+            etiqueta.appendChild(item);
+            inicializarInteracao(item);
+
+            // Adiciona listener para selecionar o item ao clicar
+            item.addEventListener('click', (event) => {
+                event.stopPropagation(); // Impede que o clique selecione a etiqueta
+                selecionarItem(item);
+            });
+            // Foca no texto ao clicar
+             if (tipo === 'texto') {
+                 item.addEventListener('focus', (event) => {
+                    event.stopPropagation();
+                    selecionarItem(item); // Garante que está selecionado ao focar
+                 });
+             }
+
+
+            // Desseleciona item se clicar fora dele, mas dentro da etiqueta
+            etiqueta.addEventListener('click', (event) => {
+                if (event.target === etiqueta) { // Garante que o clique foi na etiqueta, não em um item
+                    desselecionarItem();
+                }
+            });
+
+
+            return item; // Retorna o item criado
+        }
+
+
+        // --- Lógica de Interação (Arrastar e Redimensionar) ---
+
+        function inicializarInteracao(elemento) {
+            const position = { x: parseFloat(elemento.dataset.x) || 0, y: parseFloat(elemento.dataset.y) || 0 };
+
+            // Aplica a transformação inicial (já deve estar definida ao criar)
+            // elemento.style.transform = `translate(${position.x}px, ${position.y}px)`;
+
+            interact(elemento)
+                .draggable({
+                    listeners: {
+                        start(event) {
+                            selecionarItem(event.target); // Seleciona ao começar a arrastar
+                            event.target.style.cursor = 'grabbing';
+                        },
+                        move(event) {
+                            position.x += event.dx;
+                            position.y += event.dy;
+                            event.target.style.transform = `translate(${position.x}px, ${position.y}px)`;
+                        },
+                        end(event) {
+                            // Atualiza os atributos data-* com a posição final
+                            event.target.dataset.x = position.x;
+                            event.target.dataset.y = position.y;
+                            event.target.style.cursor = 'grab';
+                        }
+                    },
+                    modifiers: [
+                        // Restringe o movimento para dentro do elemento pai (a etiqueta)
+                        interact.modifiers.restrictRect({
+                            restriction: 'parent',
+                            endOnly: false // Restringe durante todo o movimento
+                        })
+                    ],
+                    inertia: false // Desabilita inércia para controle mais direto
+                })
+                .resizable({
+                    edges: { top: true, left: true, bottom: true, right: true },
+                    listeners: {
+                        start(event) {
+                            selecionarItem(event.target); // Seleciona ao começar a redimensionar
+                        },
+                        move: function (event) {
+                            let { x, y } = event.target.dataset;
+                            x = (parseFloat(x) || 0) + event.deltaRect.left;
+                            y = (parseFloat(y) || 0) + event.deltaRect.top;
+
+                            Object.assign(event.target.style, {
+                                width: `${event.rect.width}px`,
+                                height: `${event.rect.height}px`,
+                                transform: `translate(${x}px, ${y}px)`
+                            });
+
+                            Object.assign(event.target.dataset, { x, y });
+                        }
+                    },
+                    modifiers: [
+                        // Mantém dentro do pai
+                        interact.modifiers.restrictRect({ restriction: 'parent' }),
+                        // Tamanho mínimo
+                        interact.modifiers.restrictSize({ min: { width: 20, height: 20 } })
+                    ],
+                })
+                .on('tap', function (event) {
+                    // Seleciona ao clicar (tap)
+                    selecionarItem(event.target);
+                    // Se for texto, tenta focar
+                    if (event.target.classList.contains('item-texto')) {
+                         event.target.focus();
+                    }
+                    event.preventDefault(); 
+                });
+        }
+        
+        // --- Funções da Barra de Ferramentas de Texto ---
+
+        // Atualiza a barra de ferramentas com os estilos do item selecionado
+        function updateTextToolState() {
+            if (!itemSelecionado || !itemSelecionado.classList.contains('item-texto')) return;
+
+            // Usa getComputedStyle para pegar o estilo real (mesmo que não esteja inline)
+            const style = window.getComputedStyle(itemSelecionado);
+
+            // Fonte
+            // Pega a primeira fonte da lista e remove aspas
+            let fontFamily = style.fontFamily.split(',')[0].replace(/['"]/g, '').trim();
+            
+            // Tenta encontrar uma correspondência no select
+            let foundFont = Array.from(selectFontFamily.options).find(opt => 
+                opt.value.toLowerCase().includes(fontFamily.toLowerCase())
+            );
+            selectFontFamily.value = foundFont ? foundFont.value : 'Arial, sans-serif';
+
+
+            // Tamanho
+            inputFontSize.value = parseInt(style.fontSize) || 10;
+            
+            // Cor (converte RGB para Hex)
+            inputFontColor.value = rgbToHex(style.color);
+
+            // Transform
+            selectTextTransform.value = style.textTransform || 'none';
+
+            // Toggles
+            // Verifica 'bold' ou pesos numéricos >= 700
+            btnTextBold.classList.toggle('active', style.fontWeight === 'bold' || parseInt(style.fontWeight) >= 700);
+            btnTextItalic.classList.toggle('active', style.fontStyle === 'italic');
+            
+            // Verifica 'text-decoration-line' que é mais específico
+            const textDecor = style.textDecorationLine || '';
+            btnTextUnderline.classList.toggle('active', textDecor.includes('underline'));
+            btnTextStrike.classList.toggle('active', textDecor.includes('line-through'));
+        }
+        
+        // Alterna uma decoração de texto (sublinhado ou tachado)
+        function toggleTextDecoration(style, button) {
+            if (!itemSelecionado) return;
+
+            // Pega a decoração de linha *inline* atual (o que o usuário definiu)
+            let currentDecor = itemSelecionado.style.textDecorationLine || '';
+            const hasStyle = currentDecor.includes(style);
+            
+            // Cria um novo array filtrando o estilo atual
+            let newDecor = currentDecor.split(' ').filter(s => s.trim() !== '' && s !== style);
+            
+            // Se não tinha o estilo, adiciona
+            if (!hasStyle) {
+                newDecor.push(style);
+            }
+
+            // Aplica a nova lista de estilos
+            itemSelecionado.style.textDecorationLine = newDecor.join(' ');
+            
+            // Sincroniza o botão
+            button.classList.toggle('active', !hasStyle);
+            
+            // Garante que a propriedade 'text-decoration' geral seja limpa se não houver mais estilos
+            // ou definida se houver algum.
+            if (itemSelecionado.style.textDecorationLine) {
+                 // Define propriedades associadas (necessário se 'text-decoration' foi usado antes)
+                 itemSelecionado.style.textDecorationColor = 'inherit'; // Usa a cor do texto
+                 itemSelecionado.style.textDecorationStyle = 'solid';
+            } else {
+                 // Se não houver mais estilos, reseta o text-decoration geral
+                 itemSelecionado.style.textDecoration = 'none';
+            }
+        }
+
+
+        // --- Event Listeners da Toolbar (Principal) ---
+
+        btnAddEtiqueta.addEventListener('click', adicionarEtiqueta);
+        
+        btnImprimir.addEventListener('click', () => {
+            desselecionarItem(); // Garante que nenhum item esteja selecionado (com borda) ao imprimir
+            // Pequeno timeout para garantir que a desseleção visual ocorra antes da impressão
+            setTimeout(() => { window.print(); }, 50);
+        });
+
+        btnAddTexto.addEventListener('click', () => {
+            const itemTexto = adicionarItem(etiquetaAtiva, 'texto');
+            if(itemTexto) {
+                itemTexto.focus(); // Foca no texto recém-adicionado
+                selecionarItem(itemTexto); // Seleciona para edição
+            }
+        });
+
+        btnAddImagem.addEventListener('click', () => {
+            if (!etiquetaAtiva) {
+                alertPersonalizado("Selecione uma etiqueta primeiro!");
+                return;
+            }
+            inputImagem.click(); // Abre o seletor de arquivos
+        });
+
+        btnAddQuadrado.addEventListener('click', () => {
+            const itemForma = adicionarItem(etiquetaAtiva, 'forma');
+            if (itemForma) {
+                selecionarItem(itemForma); // Seleciona para possível remoção
+            }
+        });
+
+        // Listener para remover o item selecionado
+        btnRemoverItem.addEventListener('click', () => {
+            // Usa o alerta personalizado
+            if (itemSelecionado) {
+                 confirmPersonalizado("Tem certeza que deseja remover este item?", () => {
+                    itemSelecionado.remove();
+                    desselecionarItem(); // Limpa a seleção
+                 });
+            }
+        });
+
+
+        // Handle image upload
+        inputImagem.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file && etiquetaAtiva) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const itemImagem = adicionarItem(etiquetaAtiva, 'imagem', e.target.result);
+                    if (itemImagem) {
+                        selecionarItem(itemImagem); // Seleciona
+                    }
+                }
+                reader.readAsDataURL(file);
+            }
+            // Limpa o input para permitir selecionar o mesmo arquivo novamente
+            event.target.value = null;
+        });
+
+        // --- Event Listener para Seleção de Etiqueta ---
+
+        // Usa delegação de eventos na página de impressão
+        paginaDeImpressao.addEventListener('click', (event) => {
+            // Encontra a etiqueta pai, mesmo se clicar num item
+            const etiquetaClicada = event.target.closest('.etiqueta-editavel'); 
+            
+            if (etiquetaClicada) {
+                // Define a etiqueta como ativa
+                definirEtiquetaAtiva(etiquetaClicada);
+                
+                // Se o clique foi na etiqueta mas não num item, deseleciona o item
+                if (!event.target.closest('.item-arrastavel') && event.target === etiquetaClicada) {
+                    desselecionarItem();
+                }
+            } else if (!event.target.closest('#toolbar') && !event.target.closest('#text-toolbar-options') && !event.target.closest('.modal-overlay')) { 
+                // Se clicou fora de tudo (exceto barras e modais)
+                desselecionarItem();
+                // Opcional: Desselecionar a etiqueta ativa também
+                // if (etiquetaAtiva) {
+                //    etiquetaAtiva.classList.remove('active');
+                //    etiquetaAtiva = null;
+                // }
+            }
+        });
+
+        // --- Listener para Mudança de Tamanho/Layout ---
+        selectTamanhoEtiqueta.addEventListener('change', (event) => {
+            definirLayoutETamanho(event.target.value);
+        });
+        
+        
+        // --- Event Listeners da Barra de Texto ---
+        
+        // Mudar Fonte
+        selectFontFamily.addEventListener('change', () => {
+            if (itemSelecionado) itemSelecionado.style.fontFamily = selectFontFamily.value;
+        });
+
+        // Mudar Tamanho
+        inputFontSize.addEventListener('input', () => {
+            if (itemSelecionado) itemSelecionado.style.fontSize = inputFontSize.value + 'px';
+        });
+
+        // Mudar Cor
+        inputFontColor.addEventListener('input', () => {
+            if (itemSelecionado) itemSelecionado.style.color = inputFontColor.value;
+        });
+
+        // Transformar
+        selectTextTransform.addEventListener('change', () => {
+            if (itemSelecionado) itemSelecionado.style.textTransform = selectTextTransform.value;
+        });
+
+        // Negrito
+        btnTextBold.addEventListener('click', () => {
+            if (itemSelecionado) {
+                // Pega o estilo computado
+                const style = window.getComputedStyle(itemSelecionado);
+                const isBold = style.fontWeight === 'bold' || parseInt(style.fontWeight) >= 700;
+                
+                itemSelecionado.style.fontWeight = isBold ? 'normal' : 'bold';
+                btnTextBold.classList.toggle('active', !isBold);
+            }
+        });
+
+        // Itálico
+        btnTextItalic.addEventListener('click', () => {
+            if (itemSelecionado) {
+                const style = window.getComputedStyle(itemSelecionado);
+                const isItalic = style.fontStyle === 'italic';
+                
+                itemSelecionado.style.fontStyle = isItalic ? 'normal' : 'italic';
+                btnTextItalic.classList.toggle('active', !isItalic);
+            }
+        });
+
+        // Sublinhado
+        btnTextUnderline.addEventListener('click', () => {
+            toggleTextDecoration('underline', btnTextUnderline);
+        });
+
+        // Tachado
+        btnTextStrike.addEventListener('click', () => {
+            toggleTextDecoration('line-through', btnTextStrike);
+        });
+        
+
+        // --- Funções de Alerta/Confirmação Personalizadas (Evita alert/confirm) ---
+        
+        /**
+         * Cria um modal de alerta personalizado.
+         * @param {string} message - A mensagem a ser exibida.
+         */
+        function alertPersonalizado(message) {
+             // Reutiliza o confirm, mas sem o botão "Cancelar"
+             confirmPersonalizado(message, null, true);
+        }
+
+        /**
+         * Cria um modal de confirmação personalizado.
+         * @param {string} message - A pergunta de confirmação.
+         * @param {function} onConfirm - Callback a ser executado se o usuário confirmar.
+         * @param {boolean} [isAlert=false] - Se true, mostra apenas o botão "OK".
+         */
+        function confirmPersonalizado(message, onConfirm, isAlert = false) {
+            // Remove qualquer modal existente
+            document.querySelector('.modal-overlay')?.remove();
+
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.5); z-index: 1000; display: flex;
+                align-items: center; justify-content: center;
+            `;
+
+            const modal = document.createElement('div');
+            modal.className = 'modal-content';
+            modal.style.cssText = `
+                background: #fff; padding: 25px; border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-width: 400px;
+                text-align: center; font-family: inherit;
+            `;
+
+            const msgElement = document.createElement('p');
+            msgElement.textContent = message;
+            msgElement.style.cssText = 'margin: 0 0 20px; font-size: 1.1em; color: #333;';
+
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = 'display: flex; justify-content: center; gap: 15px;';
+
+            const btnOK = document.createElement('button');
+            btnOK.textContent = isAlert ? 'OK' : 'Confirmar';
+            btnOK.style.cssText = `
+                background-color: #1a73e8; color: white; border: none;
+                padding: 10px 20px; border-radius: 5px; cursor: pointer;
+                font-size: 1em; font-weight: 500; transition: background-color 0.2s;
+            `;
+            btnOK.onmouseover = () => btnOK.style.backgroundColor = '#185abc';
+            btnOK.onmouseout = () => btnOK.style.backgroundColor = '#1a73e8';
+
+            
+            btnOK.onclick = () => {
+                if (onConfirm) {
+                    onConfirm();
+                }
+                overlay.remove();
+            };
+
+            buttonContainer.appendChild(btnOK);
+
+            if (!isAlert) {
+                const btnCancel = document.createElement('button');
+                btnCancel.textContent = 'Cancelar';
+                btnCancel.style.cssText = `
+                    background-color: #f1f3f4; color: #3c4043; border: 1px solid #dadce0;
+                    padding: 10px 20px; border-radius: 5px; cursor: pointer;
+                    font-size: 1em; transition: background-color 0.2s;
+                `;
+                btnCancel.onmouseover = () => btnCancel.style.backgroundColor = '#e8eaed';
+                btnCancel.onmouseout = () => btnCancel.style.backgroundColor = '#f1f3f4';
+                
+                btnCancel.onclick = () => {
+                    overlay.remove();
+                };
+                buttonContainer.appendChild(btnCancel);
+            }
+
+            modal.appendChild(msgElement);
+            modal.appendChild(buttonContainer);
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+        }
+
+
+        // --- Inicialização ---
+        // Define o tamanho inicial com base no valor padrão do select
+        const layoutInicialSelecionado = selectTamanhoEtiqueta.value;
+        definirLayoutETamanho(layoutInicialSelecionado);
+
+        // Inicializa a interação para itens já existentes (nenhum no início, mas bom ter)
+        document.querySelectorAll('.item-arrastavel').forEach(inicializarInteracao);
+        // Garante que o botão de remover comece escondido
+        btnRemoverItem.style.display = 'none';
+
+    </script>
+</body>
+</html>
+
