@@ -306,6 +306,8 @@
             cursor: grab;
             touch-action: none;
             user-select: none;
+            /* Important: Ensures transform origin is center for rotation */
+            transform-origin: center center;
         }
         .item-arrastavel:hover { border-color: #1a73e8; }
         .item-arrastavel.selecionado-para-remocao {
@@ -488,18 +490,20 @@
         }
         .modal-close:hover { background-color: #e8eaed; }
         
-        /* Modal de Input (QR/Barcode) */
+        /* Modal de Input (QR/Barcode) & Duplicate Count */
         .modal-input-content {
              padding: 15px;
              text-align: center;
         }
-        .modal-input-content input[type="text"] {
+        .modal-input-content input[type="text"],
+        .modal-input-content input[type="number"] { /* Added number type */
             width: 90%;
             padding: 10px;
             font-size: 1em;
             border: 1px solid #ccc;
             border-radius: 4px;
             margin-bottom: 15px;
+            box-sizing: border-box; /* Include padding in width */
         }
         .modal-input-content .button-group {
              justify-content: center;
@@ -571,7 +575,7 @@
                 background-color: transparent !important; /* Esconde o fundo */
                 border-top-color: var(--line-print-color, #000) !important; /* Usa a cor definida */
                 border-top-style: var(--line-print-style, solid) !important;
-                /* Cor de fundo sólida será impressa normalmente */
+                /* Cor de fundo sólida será impressa normally */
                 background-color: var(--line-print-style, solid) == 'solid' ? var(--line-print-color, #000) : transparent !important;
             }
             
@@ -603,6 +607,10 @@
                 </button>
                 <button id="btn-duplicar-etiqueta" title="Duplicar etiqueta selecionada">
                     <span class="material-icons">content_copy</span> Duplicar
+                </button>
+                <!-- NOVO BOTÃO DE REMOVER ETIQUETA -->
+                <button id="btn-remover-etiqueta" title="Remover etiqueta selecionada" style="color: #D93025;">
+                    <span class="material-icons">delete_sweep</span>
                 </button>
                 <button id="btn-imprimir" title="Imprimir página">
                     <span class="material-icons">print</span> Imprimir
@@ -763,7 +771,7 @@
         </div>
     </div>
     
-    <!-- Modal de Input (QR/Barcode/IA) -->
+    <!-- Modal de Input (QR/Barcode) -->
     <div id="modal-input" class="modal-overlay">
         <div class="modal-content modal-input-content">
             <h3 id="modal-input-title">Digite o valor</h3>
@@ -774,16 +782,24 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal para Contagem de Duplicação -->
+    <div id="modal-duplicate-count" class="modal-overlay">
+        <div class="modal-content modal-input-content">
+            <h3 id="modal-duplicate-title">Quantas cópias deseja criar?</h3>
+            <input type="number" id="modal-duplicate-field" value="1" min="1" max="100">
+            <div class="button-group">
+                <button id="modal-duplicate-submit" class="btn-submit">Criar</button>
+                <button id="modal-duplicate-close" class="btn-cancel">Cancelar</button>
+            </div>
+        </div>
+    </div>
     
-    <!-- Modal de Loader (IA) Removido -->
-
-
     <!-- Estilo dinâmico para impressão -->
     <style id="print-style-dynamic"></style>
     <!-- Estilo dinâmico para tela (ex: colunas) - JÁ ESTÁ FORA DO STYLE PRINCIPAL -->
 
     <script>
-        // --- Chave da API de IA Removida ---
         
         // --- Referências DOM (Principais) ---
         const paginaDeImpressao = document.getElementById('pagina-de-impressao');
@@ -795,11 +811,12 @@
         const btnRemoverItem = document.getElementById('btn-remover-item');
         const inputImagem = document.getElementById('input-imagem');
         const printStyleDynamic = document.getElementById('print-style-dynamic');
-        const screenStyleDynamic = document.getElementById('screen-style-dynamic'); // Novo
+        const screenStyleDynamic = document.getElementById('screen-style-dynamic');
 
         // --- Referências DOM (Layout e Duplicar) ---
         const selectLayoutPreset = document.getElementById('select-layout-preset');
         const btnDuplicarEtiqueta = document.getElementById('btn-duplicar-etiqueta');
+        const btnRemoverEtiqueta = document.getElementById('btn-remover-etiqueta'); // NOVO
         const inputCustomWidth = document.getElementById('input-custom-width');
         const inputCustomHeight = document.getElementById('input-custom-height');
         const inputCustomCols = document.getElementById('input-custom-cols');
@@ -811,7 +828,6 @@
         const btnAddLapis = document.getElementById('btn-add-lapis');
         const btnAddQRCode = document.getElementById('btn-add-qrcode');
         const btnAddBarcode = document.getElementById('btn-add-barcode');
-        // btnAddAiImage Removido
 
         // --- Referências DOM (Modais) ---
         const modalSimbolos = document.getElementById('modal-simbolos');
@@ -822,7 +838,13 @@
         const modalInputField = document.getElementById('modal-input-field');
         const modalInputSubmit = document.getElementById('modal-input-submit');
         const modalInputClose = document.getElementById('modal-input-close');
-        // modalLoader Removido
+        
+        // Modal de Duplicação
+        const modalDuplicateCount = document.getElementById('modal-duplicate-count');
+        const modalDuplicateField = document.getElementById('modal-duplicate-field');
+        const modalDuplicateSubmit = document.getElementById('modal-duplicate-submit');
+        const modalDuplicateClose = document.getElementById('modal-duplicate-close');
+
 
         // --- Referências DOM (Barras Secundárias) ---
         const textToolbarOptions = document.getElementById('text-toolbar-options');
@@ -853,13 +875,15 @@
         let itemCounter = 0;
         let tamanhoAtualEtiqueta = { width: '100mm', height: '50mm' };
         let layoutAtual = 'simples';
-        let modalInputCallback = null; // Callback para o modal de input
+        let modalInputCallback = null; // Callback para o modal de input genérico
         
         // --- Estado de Desenho (Lápis) ---
         let isDrawing = false;
         let drawCanvas = null;
         let drawCtx = null;
         let btnConcluirDesenho = null;
+        // Variáveis para armazenar os listeners de desenho (para remoção correta)
+        let drawListeners = { start: null, end: null, draw: null };
 
 
         // --- Funções Auxiliares (Definir Ativa, IDs, Seleção) ---
@@ -1038,30 +1062,34 @@
             definirEtiquetaAtiva(novaEtiqueta);
         }
 
-        // Função para duplicar a etiqueta ativa
-        function duplicarEtiqueta() {
+        // Função para duplicar a etiqueta ativa múltiplas vezes
+        function duplicarEtiqueta(count = 1) { // Aceita contagem
             if (isDrawing) pararModoDesenho(false);
             if (!etiquetaAtiva) {
                 alertPersonalizado("Por favor, selecione a etiqueta que deseja duplicar.");
                 return;
             }
 
-            const clone = etiquetaAtiva.cloneNode(true);
-            clone.classList.remove('active');
-            clone.dataset.labelId = gerarLabelId();
-            
-            // Insere após a etiqueta ativa
-            etiquetaAtiva.insertAdjacentElement('afterend', clone);
+            let lastClone = etiquetaAtiva; // Referência para inserir após
 
-            // IMPORTANTE: Reinicializa a interação para todos os itens clonados
-            clone.querySelectorAll('.item-arrastavel').forEach(item => {
-                // Limpa dados de interação antigos do interact.js se existirem
-                // (O cloneNode não copia listeners, mas é bom garantir)
-                inicializarInteracao(item);
-            });
+            for (let i = 0; i < count; i++) {
+                const clone = etiquetaAtiva.cloneNode(true);
+                clone.classList.remove('active');
+                clone.dataset.labelId = gerarLabelId();
+                
+                // Insere após a etiqueta ativa ou o último clone criado
+                lastClone.insertAdjacentElement('afterend', clone);
 
-            // Define a nova etiqueta clonada como ativa
-            definirEtiquetaAtiva(clone);
+                // IMPORTANTE: Reinicializa a interação para todos os itens clonados
+                clone.querySelectorAll('.item-arrastavel').forEach(item => {
+                    inicializarInteracao(item);
+                });
+                
+                lastClone = clone; // Atualiza a referência para a próxima inserção
+            }
+
+            // Define o último clone criado como ativo
+            definirEtiquetaAtiva(lastClone);
         }
 
 
@@ -1087,8 +1115,8 @@
             let startWidth = Math.max(80, etiquetaWidth * 0.25);
             let startHeight = Math.max(50, etiquetaHeight * 0.25);
 
-            item.style.left = `${startX}px`;
-            item.style.top = `${startY}px`;
+            item.style.left = `${startX}px`; // Apenas para posicionamento inicial do DOM
+            item.style.top = `${startY}px`; // JS usará transform
             item.dataset.x = startX;
             item.dataset.y = startY;
             item.dataset.angle = 0; // Adiciona dado de ângulo
@@ -1189,6 +1217,13 @@
                     height: 128,
                     correctLevel : QRCode.CorrectLevel.H
                 });
+                // Ensure generated elements fit
+                const qrElement = qrContainer.querySelector('canvas') || qrContainer.querySelector('img');
+                if (qrElement) {
+                    qrElement.style.width = '100%';
+                    qrElement.style.height = '100%';
+                    qrElement.style.objectFit = 'contain';
+                }
             } catch(e) {
                 console.error("Erro ao gerar QR Code:", e);
                 alertPersonalizado("Erro ao gerar QR Code. Verifique os dados.");
@@ -1209,12 +1244,16 @@
              try {
                 JsBarcode(barcodeSvg, data, {
                     format: "CODE128",
-                    displayValue: true,
+                    displayValue: true, // Show text below barcode
                     fontSize: 14,
-                    width: 2,
-                    height: 40,
-                    margin: 5
+                    width: 2, // Bar width
+                    height: 40, // Bar height
+                    margin: 5 // Margin around barcode
                 });
+                // Ensure SVG fits container
+                barcodeSvg.style.width = '100%';
+                barcodeSvg.style.height = '100%';
+                barcodeSvg.style.objectFit = 'fill'; // Stretch to fill
              } catch (e) {
                  console.error("Erro ao gerar Código de Barras:", e);
                  alertPersonalizado("Valor inválido para Código de Barras (CODE128).");
@@ -1223,16 +1262,13 @@
              selecionarItem(item);
         }
 
-        // --- Funções de Geração de Imagem IA Removidas ---
-
-
         // --- Lógica de Interação (Arrastar, Redimensionar E ROTACIONAR) ---
 
         function inicializarInteracao(elemento) {
-            const position = { x: parseFloat(elemento.dataset.x) || 0, y: parseFloat(elemento.dataset.y) || 0 };
+            let position = { x: parseFloat(elemento.dataset.x) || 0, y: parseFloat(elemento.dataset.y) || 0 };
             let angle = parseFloat(elemento.dataset.angle) || 0;
 
-            // Aplica transformação inicial (com rotação)
+            // Aplica transformação inicial
             elemento.style.transform = `translate(${position.x}px, ${position.y}px) rotate(${angle}deg)`;
 
             interact(elemento)
@@ -1245,7 +1281,7 @@
                         move(event) {
                             position.x += event.dx;
                             position.y += event.dy;
-                            // Atualiza transform com rotação
+                            // Update transform string preserving rotation
                             event.target.style.transform = `translate(${position.x}px, ${position.y}px) rotate(${angle}deg)`;
                         },
                         end(event) {
@@ -1271,23 +1307,37 @@
                             selecionarItem(event.target);
                         },
                         move: function (event) {
-                            let { x, y } = event.target.dataset;
-                            x = (parseFloat(x) || 0) + event.deltaRect.left;
-                            y = (parseFloat(y) || 0) + event.deltaRect.top;
+                            // Update position based on resize delta, considering current angle
+                            const dx = event.deltaRect.left;
+                            const dy = event.deltaRect.top;
+                            
+                            // Adjust position based on rotation to keep top-left corner anchored during resize
+                            const rad = angle * Math.PI / 180;
+                            const cos = Math.cos(rad);
+                            const sin = Math.sin(rad);
+                            
+                            // Transform the delta position according to the element's rotation
+                            const rotatedDx = dx * cos - dy * sin;
+                            const rotatedDy = dx * sin + dy * cos;
+
+                            position.x += rotatedDx;
+                            position.y += rotatedDy;
 
                             Object.assign(event.target.style, {
                                 width: `${event.rect.width}px`,
                                 height: `${event.rect.height}px`,
-                                // Atualiza transform com rotação
-                                transform: `translate(${x}px, ${y}px) rotate(${angle}deg)`
+                                // Update transform string with new position and existing rotation
+                                transform: `translate(${position.x}px, ${position.y}px) rotate(${angle}deg)`
                             });
 
-                            Object.assign(event.target.dataset, { x, y });
+                            // Update dataset position
+                            event.target.dataset.x = position.x;
+                            event.target.dataset.y = position.y;
                         }
                     },
                     modifiers: [
                         interact.modifiers.restrictRect({ restriction: 'parent' }),
-                        interact.modifiers.restrictSize({ min: { width: 20, height: 1 } })
+                        interact.modifiers.restrictSize({ min: { width: 20, height: 1 } }) // Min height 1 for lines
                     ],
                 })
                 .on('tap', function (event) {
@@ -1305,28 +1355,31 @@
                     onstart: function(event) {
                         event.target.style.cursor = 'grabbing';
                         const rect = elemento.getBoundingClientRect();
-                        // Calcula o centro do elemento na tela
+                        // Calculate the element's center point
                         const centerX = window.scrollX + rect.left + rect.width / 2;
                         const centerY = window.scrollY + rect.top + rect.height / 2;
+                        // Store the center point in the interaction object
                         event.interaction.center = { x: centerX, y: centerY };
                     },
                     onmove: function (event) {
                         const { center } = event.interaction;
-                        // Calcula o ângulo do mouse em relação ao centro do item
-                        const newAngleRad = Math.atan2(event.pageY - center.y, event.pageX - center.x);
-                        const prevAngleRad = Math.atan2(event.prevEvent.pageY - center.y, event.prevEvent.pageX - center.x);
-                        // Calcula a diferença de ângulo
-                        const deltaAngleRad = newAngleRad - prevAngleRad;
-                        
-                        angle += deltaAngleRad * (180 / Math.PI); // 'angle' é da closure, em graus
+                        // Calculate angle difference from center to pointer
+                        const angleRad = Math.atan2(event.pageY - center.y, event.pageX - center.x);
+                        const angleDeg = angleRad * (180 / Math.PI);
 
-                        const { x, y } = elemento.dataset;
-                        // Aplica a nova rotação junto com a translação
-                        elemento.style.transform = `translate(${x || 0}px, ${y || 0}px) rotate(${angle}deg)`;
+                        // Calculate delta angle based on previous event
+                        // Note: interact.js doesn't easily provide previous angle,
+                        // so we calculate absolute angle and apply it.
+                        // Add 90 degrees offset because atan2 calculates from the positive x-axis
+                        angle = angleDeg + 90; 
+
+                        // Update the element's transform style with the new angle
+                        elemento.style.transform = `translate(${position.x}px, ${position.y}px) rotate(${angle}deg)`;
                     },
                     onend: function (event) {
                         event.target.style.cursor = 'grab';
-                        elemento.dataset.angle = angle; // Salva o ângulo final no dataset
+                        // Save the final angle in the dataset
+                        elemento.dataset.angle = angle; 
                     }
                 });
             }
@@ -1376,13 +1429,13 @@
                 if (!linhaVisual) return;
                 const style = window.getComputedStyle(linhaVisual);
                 
-                const color = style.backgroundColor === 'transparent' ? style.borderTopColor : style.backgroundColor;
+                const color = style.backgroundColor === 'transparent' || style.backgroundColor === 'rgba(0, 0, 0, 0)' ? style.borderTopColor : style.backgroundColor;
                 inputStyleColor.value = rgbToHex(color);
                 
-                const thickness = (style.height === 'auto' || style.height === '') ? parseInt(style.borderTopWidth) : parseInt(style.height);
+                const thickness = (style.height === 'auto' || style.height === '' || style.height === '0px') ? parseInt(style.borderTopWidth) : parseInt(style.height);
                 inputStyleThickness.value = thickness || 1;
                 
-                selectStyleType.value = style.borderTopStyle === 'none' ? 'solid' : style.borderTopStyle;
+                selectStyleType.value = (style.borderTopStyle === 'none' || style.borderTopStyle === '') ? 'solid' : style.borderTopStyle;
                 
                 inputStyleThickness.disabled = false;
                 selectStyleType.disabled = false;
@@ -1406,14 +1459,15 @@
                 if (!linhaVisual) return;
 
                 if (styleType === 'solid') {
-                    linhaVisual.style.borderTop = 'none';
+                    linhaVisual.style.borderTop = 'none'; // Remove border if solid
                     linhaVisual.style.backgroundColor = color;
                     linhaVisual.style.height = thickness;
                 } else {
-                    linhaVisual.style.backgroundColor = 'transparent';
+                    linhaVisual.style.backgroundColor = 'transparent'; // Transparent background for dashed/dotted
                     linhaVisual.style.borderTop = `${thickness} ${styleType} ${color}`;
-                    linhaVisual.style.height = 'auto';
+                    linhaVisual.style.height = '0px'; // Border provides the height
                 }
+                // Store style properties for printing
                 itemSelecionado.style.setProperty('--line-print-color', color);
                 itemSelecionado.style.setProperty('--line-print-style', styleType);
              } else if (itemSelecionado.classList.contains('item-forma')) {
@@ -1426,7 +1480,38 @@
         // --- Event Listeners da Toolbar (Principal) ---
 
         btnAddEtiqueta.addEventListener('click', adicionarEtiqueta);
-        btnDuplicarEtiqueta.addEventListener('click', duplicarEtiqueta); // Novo listener
+        
+        // Modified listener for Duplicar
+        btnDuplicarEtiqueta.addEventListener('click', () => {
+             if (isDrawing) pararModoDesenho(false);
+             if (!etiquetaAtiva) {
+                 alertPersonalizado("Por favor, selecione a etiqueta que deseja duplicar.");
+                 return;
+             }
+             showDuplicateCountModal(); // Show the new modal
+        });
+        
+        // NOVO LISTENER para Remover Etiqueta
+        btnRemoverEtiqueta.addEventListener('click', () => {
+             if (isDrawing) pararModoDesenho(false);
+             if (!etiquetaAtiva) {
+                 alertPersonalizado("Por favor, selecione uma etiqueta para remover.");
+                 return;
+             }
+             
+             // Não permite remover a última etiqueta
+             if (paginaDeImpressao.querySelectorAll('.etiqueta-editavel').length <= 1) {
+                 alertPersonalizado("Não é possível remover a última etiqueta.");
+                 return;
+             }
+             
+             confirmPersonalizado("Tem certeza que deseja remover esta etiqueta e todo o seu conteúdo?", () => {
+                 const proximaEtiqueta = etiquetaAtiva.nextElementSibling || etiquetaAtiva.previousElementSibling;
+                 etiquetaAtiva.remove();
+                 definirEtiquetaAtiva(proximaEtiqueta); // Ativa a próxima ou anterior
+             });
+        });
+
         
         btnImprimir.addEventListener('click', () => {
             desselecionarItem();
@@ -1472,7 +1557,7 @@
              const shapeType = selectAddShape.value;
              if (shapeType && etiquetaAtiva) {
                  adicionarItem(etiquetaAtiva, 'forma', shapeType);
-                 selectAddShape.selectedIndex = 0;
+                 selectAddShape.selectedIndex = 0; // Reset dropdown
              } else if (!etiquetaAtiva) {
                  alertPersonalizado("Selecione uma etiqueta primeiro!");
                  selectAddShape.selectedIndex = 0;
@@ -1509,12 +1594,10 @@
             });
         });
 
-        // Listener Imagem IA Removido
-        
         // Adicionar Lápis (Modo Desenho)
         btnAddLapis.addEventListener('click', () => {
             if (isDrawing) {
-                pararModoDesenho(false); // Cancela o modo desenho
+                pararModoDesenho(false); // Cancela o modo desenho se já estiver ativo
             } else if (etiquetaAtiva) {
                 iniciarModoDesenho();
             } else {
@@ -1527,12 +1610,17 @@
         paginaDeImpressao.addEventListener('click', (event) => {
             const etiquetaClicada = event.target.closest('.etiqueta-editavel'); 
             
-            if (etiquetaClicada && !isDrawing) {
+            if (etiquetaClicada && !isDrawing) { // Don't select labels while drawing
                 definirEtiquetaAtiva(etiquetaClicada);
+                // If click was directly on the label (not an item), deselect item
                 if (!event.target.closest('.item-arrastavel') && event.target === etiquetaClicada) {
                     desselecionarItem();
                 }
-            } else if (!event.target.closest('#toolbar') && !event.target.closest('.secondary-toolbar') && !event.target.closest('.modal-overlay') && !isDrawing) { 
+            } else if (!event.target.closest('#toolbar') 
+                       && !event.target.closest('.secondary-toolbar') 
+                       && !event.target.closest('.modal-overlay') 
+                       && !isDrawing // Don't deselect if drawing
+                       && !event.target.closest('.etiqueta-editavel')) { // Clicked outside labels too
                 desselecionarItem();
             }
         });
@@ -1545,13 +1633,17 @@
         
         // Listeners para inputs de layout personalizado
         function handleCustomLayoutChange() {
-            const w = inputCustomWidth.value;
-            const h = inputCustomHeight.value;
+            if (isDrawing) pararModoDesenho(false); // Exit drawing if layout changes
+            const w = parseFloat(inputCustomWidth.value);
+            const h = parseFloat(inputCustomHeight.value);
             const c = parseInt(inputCustomCols.value, 10);
             if (w > 0 && h > 0 && c > 0) {
                 aplicarLayout(w, h, c);
+            } else {
+                // Não alerta em cada 'input', espera 'change' ou botão
             }
         }
+        // Mudar para 'change' para evitar alertas em tempo real
         inputCustomWidth.addEventListener('change', handleCustomLayoutChange);
         inputCustomHeight.addEventListener('change', handleCustomLayoutChange);
         inputCustomCols.addEventListener('change', handleCustomLayoutChange);
@@ -1587,25 +1679,26 @@
              if (!itemSelecionado) return;
              const color = inputStyleColor.value;
              if (itemSelecionado.classList.contains('item-linha')) {
-                 applyLineStyle(selectStyleType.value);
+                 applyLineStyle(selectStyleType.value); // Use current style type
              } else if (itemSelecionado.classList.contains('item-forma')) {
                  itemSelecionado.style.backgroundColor = color;
-                 itemSelecionado.style.borderColor = color; // Muda a borda junto
+                 itemSelecionado.style.borderColor = color; // Mudar borda junto
              }
         });
         inputStyleThickness.addEventListener('input', () => {
              if (!itemSelecionado) return;
+             const thickness = inputStyleThickness.value + 'px';
              if (itemSelecionado.classList.contains('item-linha')) {
-                 applyLineStyle(selectStyleType.value); // Reaplica
+                 applyLineStyle(selectStyleType.value); // Reaplica com nova espessura
              } else if (itemSelecionado.classList.contains('item-forma')) {
-                 itemSelecionado.style.borderWidth = inputStyleThickness.value + 'px';
+                 itemSelecionado.style.borderWidth = thickness;
              }
         });
         selectStyleType.addEventListener('change', () => {
              if (!itemSelecionado) return;
              const styleType = selectStyleType.value;
              if (itemSelecionado.classList.contains('item-linha')) {
-                 applyLineStyle(styleType); // Reaplica
+                 applyLineStyle(styleType); // Reaplica com novo estilo
              } else if (itemSelecionado.classList.contains('item-forma')) {
                  itemSelecionado.style.borderStyle = styleType;
              }
@@ -1617,8 +1710,9 @@
             const simbolos = [
                 '★', '☆', '♡', '❤', '♪', '♫', '✔', '✖', '✅', '❌', '⚠', '⚡', '⚙',
                 '❄', '🔥', '💧', '☀️', '☁️', '☂️', '▶', '◀', '⬆', '⬇', '♻', '™', '®', '©',
-                '😀', '😂', '😍', '👍', '👎', '🎉', '🎁', '📞', '✉', '⏰', '🔒', '🔑', '💡'
-            ];
+                '😀', '😂', '😍', '👍', '👎', '🎉', '🎁', '📞', '✉', '⏰', '🔒', '🔑', '💡',
+                '💰', '💲', '🏷️', '📦', '🛒', '🌍', '🏠', '🏢', '🏭', '📌', '📅', '📊', '📈', '📉'
+            ]; // Added more symbols
             symbolGridContainer.innerHTML = '';
             simbolos.forEach(simbolo => {
                 const span = document.createElement('span');
@@ -1631,12 +1725,13 @@
             });
         }
         
-        // --- Lógica do Modal de Input (QR/Barcode/IA) ---
+        // --- Lógica do Modal de Input (QR/Barcode) ---
         function showInputModal(title, callback) {
             modalInputTitle.textContent = title;
             modalInputCallback = callback;
             modalInput.style.display = 'flex';
             modalInputField.value = '';
+            modalInputField.type = 'text'; // Ensure it's text type
             modalInputField.focus();
         }
         modalInputSubmit.addEventListener('click', () => {
@@ -1650,7 +1745,27 @@
             modalInput.style.display = 'none';
             modalInputCallback = null;
         });
-        
+
+        // --- Lógica do Modal de Contagem de Duplicação ---
+        function showDuplicateCountModal() {
+            modalDuplicateField.value = '1'; // Reset to 1
+            modalDuplicateCount.style.display = 'flex';
+            modalDuplicateField.focus();
+            modalDuplicateField.select(); // Select the text
+        }
+        modalDuplicateSubmit.addEventListener('click', () => {
+            const count = parseInt(modalDuplicateField.value, 10);
+            if (count > 0 && count <= 100) { // Add a reasonable limit
+                duplicarEtiqueta(count);
+                modalDuplicateCount.style.display = 'none';
+            } else {
+                alertPersonalizado("Por favor, insira um número entre 1 e 100.");
+            }
+        });
+        modalDuplicateClose.addEventListener('click', () => {
+            modalDuplicateCount.style.display = 'none';
+        });
+
         
         // --- Lógica de Desenho (Lápis e Borracha) ---
         
@@ -1658,117 +1773,157 @@
             if (!etiquetaAtiva) return;
             
             isDrawing = true;
-            btnAddLapis.classList.add('active');
-            desselecionarItem();
-            drawingToolbarOptions.style.display = 'flex'; // Mostra barra de desenho
+            btnAddLapis.classList.add('active'); // Highlight pencil button
+            desselecionarItem(); // Deselect any selected item
+            drawingToolbarOptions.style.display = 'flex'; // Show drawing tools
             
-            // Seta ferramenta padrão (lápis)
+            // Set default tool (pencil)
             btnDrawToolPencil.classList.add('active');
             btnDrawToolEraser.classList.remove('active');
             
+            // Create canvas overlay
             drawCanvas = document.createElement('canvas');
             drawCanvas.id = 'draw-canvas-overlay';
-            drawCanvas.width = etiquetaAtiva.offsetWidth;
+            // Match canvas size to label size
+            drawCanvas.width = etiquetaAtiva.offsetWidth; 
             drawCanvas.height = etiquetaAtiva.offsetHeight;
-            etiquetaAtiva.appendChild(drawCanvas);
+            etiquetaAtiva.appendChild(drawCanvas); // Append directly to the active label
             
             drawCtx = drawCanvas.getContext('2d');
+            // Set initial drawing styles
             drawCtx.strokeStyle = inputDrawColor.value;
             drawCtx.lineWidth = inputDrawThickness.value;
-            drawCtx.lineCap = 'round';
-            drawCtx.lineJoin = 'round';
-            drawCtx.globalCompositeOperation = 'source-over'; // Modo Lápis
+            drawCtx.lineCap = 'round'; // Smooth line ends
+            drawCtx.lineJoin = 'round'; // Smooth line corners
+            drawCtx.globalCompositeOperation = 'source-over'; // Default: Pencil mode
             
-            let painting = false;
+            let painting = false; // Flag to track if mouse/touch is down
 
+            // Function to get accurate coordinates relative to the canvas
             function getMousePos(evt) {
                  const rect = drawCanvas.getBoundingClientRect();
-                 if (evt.touches && evt.touches.length > 0) evt = evt.touches[0];
+                 // Handle both mouse and touch events
+                 const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+                 const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+                 // Adjust for canvas scaling if its display size differs from its internal resolution
+                 const scaleX = drawCanvas.width / rect.width;
+                 const scaleY = drawCanvas.height / rect.height;
                  return {
-                    x: (evt.clientX - rect.left) * (drawCanvas.width / rect.width),
-                    y: (evt.clientY - rect.top) * (drawCanvas.height / rect.height)
+                    x: (clientX - rect.left) * scaleX,
+                    y: (clientY - rect.top) * scaleY
                  };
             }
-            function startPosition(e) {
-                e.preventDefault();
+            // Event handler when drawing starts (mousedown/touchstart)
+            drawListeners.start = function(e) {
+                e.preventDefault(); // Prevent default actions (like scrolling on touch)
                 painting = true;
                 const pos = getMousePos(e);
-                drawCtx.beginPath();
-                drawCtx.moveTo(pos.x, pos.y);
+                drawCtx.beginPath(); // Start a new path
+                drawCtx.moveTo(pos.x, pos.y); // Move to the starting point
             }
-            function endPosition() {
+            // Event handler when drawing ends (mouseup/touchend/mouseleave)
+            drawListeners.end = function() {
+                if (!painting) return;
                 painting = false;
-                drawCtx.beginPath();
+                drawCtx.beginPath(); // Reset path
             }
-            function draw(e) {
+            // Event handler while drawing (mousemove/touchmove)
+            drawListeners.draw = function(e) {
                 e.preventDefault();
                 if (!painting) return;
                 const pos = getMousePos(e);
-                drawCtx.lineTo(pos.x, pos.y);
-                drawCtx.stroke();
-                drawCtx.beginPath();
-                drawCtx.moveTo(pos.x, pos.y);
+                drawCtx.lineTo(pos.x, pos.y); // Draw a line to the new point
+                drawCtx.stroke(); // Render the line segment
+                drawCtx.beginPath(); // Inicia novo caminho para o próximo segmento
+                drawCtx.moveTo(pos.x, pos.y); // Move para o ponto atual
             }
 
-            // Eventos de Mouse/Toque
-            drawCanvas.addEventListener('mousedown', startPosition);
-            drawCanvas.addEventListener('mouseup', endPosition);
-            drawCanvas.addEventListener('mouseleave', endPosition);
-            drawCanvas.addEventListener('mousemove', draw);
-            drawCanvas.addEventListener('touchstart', startPosition);
-            drawCanvas.addEventListener('touchend', endPosition);
-            drawCanvas.addEventListener('touchcancel', endPosition);
-            drawCanvas.addEventListener('touchmove', draw);
+            // Attach Event Listeners for Mouse and Touch
+            drawCanvas.addEventListener('mousedown', drawListeners.start);
+            drawCanvas.addEventListener('mouseup', drawListeners.end);
+            drawCanvas.addEventListener('mouseleave', drawListeners.end); // Stop drawing if mouse leaves canvas
+            drawCanvas.addEventListener('mousemove', drawListeners.draw);
             
-            // Adiciona botão "Concluir"
-            btnConcluirDesenho = document.createElement('button');
-            btnConcluirDesenho.id = 'btn-concluir-desenho';
-            btnConcluirDesenho.textContent = 'Concluir Desenho';
-            btnConcluirDesenho.onclick = () => pararModoDesenho(true); // Salva ao concluir
-            document.body.appendChild(btnConcluirDesenho);
+            drawCanvas.addEventListener('touchstart', drawListeners.start, { passive: false }); // Use passive: false to allow preventDefault
+            drawCanvas.addEventListener('touchend', drawListeners.end);
+            drawCanvas.addEventListener('touchcancel', drawListeners.end); // Handle interruption
+            drawCanvas.addEventListener('touchmove', drawListeners.draw, { passive: false });
+            
+            // Add "Concluir Desenho" button dynamically
+            if (!btnConcluirDesenho) { // Create only if it doesn't exist
+                btnConcluirDesenho = document.createElement('button');
+                btnConcluirDesenho.id = 'btn-concluir-desenho';
+                btnConcluirDesenho.textContent = 'Concluir Desenho';
+                btnConcluirDesenho.onclick = () => pararModoDesenho(true); // Save drawing on click
+                document.body.appendChild(btnConcluirDesenho);
+            }
         }
         
+        // Function to stop drawing mode (CORRIGIDO)
         function pararModoDesenho(salvar = true) {
-             if (!isDrawing) return;
+             if (!isDrawing) return; // Exit if not drawing
              
-             if (salvar) {
-                const dataURL = drawCanvas.toDataURL('image/png');
+             if (salvar && drawCanvas) {
+                // Check if canvas is not blank before saving
                 if (!isCanvasBlank(drawCanvas)) {
-                    adicionarItem(etiquetaAtiva, 'imagem', dataURL);
+                    const dataURL = drawCanvas.toDataURL('image/png'); // Get drawing as PNG
+                    adicionarItem(etiquetaAtiva, 'imagem', dataURL); // Add as a new image item
                 }
              }
              
-             // Limpeza
+             // Cleanup
              isDrawing = false;
-             btnAddLapis.classList.remove('active');
-             drawingToolbarOptions.style.display = 'none'; // Esconde barra
-             if(drawCanvas) drawCanvas.remove();
-             if(btnConcluirDesenho) btnConcluirDesenho.remove();
-             drawCanvas = null;
-             drawCtx = null;
-             btnConcluirDesenho = null;
+             btnAddLapis.classList.remove('active'); // Deactivate pencil button
+             drawingToolbarOptions.style.display = 'none'; // Hide drawing tools
+             if(drawCanvas) {
+                // Remove listeners que foram salvos
+                drawCanvas.removeEventListener('mousedown', drawListeners.start);
+                drawCanvas.removeEventListener('mouseup', drawListeners.end);
+                drawCanvas.removeEventListener('mouseleave', drawListeners.end);
+                drawCanvas.removeEventListener('mousemove', drawListeners.draw);
+                drawCanvas.removeEventListener('touchstart', drawListeners.start);
+                drawCanvas.removeEventListener('touchend', drawListeners.end);
+                drawCanvas.removeEventListener('touchcancel', drawListeners.end);
+                drawCanvas.removeEventListener('touchmove', drawListeners.draw);
+                drawCanvas.remove(); // Remove canvas from DOM
+             }
+             if(btnConcluirDesenho) {
+                btnConcluirDesenho.remove(); // Remove "Concluir" button
+                btnConcluirDesenho = null; // Reset variable
+             }
+             drawCanvas = null; // Reset variable
+             drawCtx = null; // Reset variable
+             drawListeners = { start: null, end: null, draw: null }; // Limpa listeners
         }
 
+        // Helper function to check if canvas is blank (all transparent pixels)
         function isCanvasBlank(canvas) {
+            if (!canvas) return true;
             const context = canvas.getContext('2d');
-            const pixelBuffer = new Uint32Array(
-                context.getImageData(0, 0, canvas.width, canvas.height).data.buffer
-            );
-            return !pixelBuffer.some(color => color !== 0);
+            try {
+                const pixelBuffer = new Uint32Array(
+                    context.getImageData(0, 0, canvas.width, canvas.height).data.buffer
+                );
+                // Check if any pixel has non-zero alpha
+                return !pixelBuffer.some(color => (color & 0xff000000) !== 0);
+            } catch (e) {
+                console.error("Error checking canvas blank state:", e);
+                return false; // Assume not blank if error occurs (e.g., tainted canvas)
+            }
         }
 
-        // Listeners da Barra de Desenho
+        // Listeners for Drawing Toolbar
         inputDrawColor.addEventListener('input', () => { if(drawCtx) drawCtx.strokeStyle = inputDrawColor.value; });
         inputDrawThickness.addEventListener('input', () => { if(drawCtx) drawCtx.lineWidth = inputDrawThickness.value; });
         
         btnDrawToolPencil.addEventListener('click', () => {
-            if(drawCtx) drawCtx.globalCompositeOperation = 'source-over';
+            if(drawCtx) drawCtx.globalCompositeOperation = 'source-over'; // Set draw mode
             btnDrawToolPencil.classList.add('active');
             btnDrawToolEraser.classList.remove('active');
         });
         
         btnDrawToolEraser.addEventListener('click', () => {
-            if(drawCtx) drawCtx.globalCompositeOperation = 'destination-out';
+            if(drawCtx) drawCtx.globalCompositeOperation = 'destination-out'; // Set erase mode
             btnDrawToolPencil.classList.remove('active');
             btnDrawToolEraser.classList.add('active');
         });
@@ -1779,9 +1934,9 @@
              confirmPersonalizado(message, null, true);
         }
         function confirmPersonalizado(message, onConfirm, isAlert = false) {
-            document.querySelector('.modal-overlay-confirm')?.remove(); // Remove anterior
+            document.querySelector('.modal-overlay-confirm')?.remove(); // Remove previous confirm modals
             const overlay = document.createElement('div');
-            overlay.className = 'modal-overlay modal-overlay-confirm';
+            overlay.className = 'modal-overlay modal-overlay-confirm'; // Specific class for confirmation
             overlay.style.cssText = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; align-items: center; justify-content: center;`;
             const modal = document.createElement('div');
             modal.style.cssText = `background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-width: 400px; text-align: center; font-family: inherit;`;
@@ -1800,7 +1955,7 @@
                 overlay.remove();
             };
             buttonContainer.appendChild(btnOK);
-            if (!isAlert) {
+            if (!isAlert) { // Only add Cancel button if it's not just an alert
                 const btnCancel = document.createElement('button');
                 btnCancel.textContent = 'Cancelar';
                 btnCancel.style.cssText = `background-color: #f1f3f4; color: #3c4043; border: 1px solid #dadce0; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 1em; transition: background-color 0.2s;`;
@@ -1817,11 +1972,32 @@
 
 
         // --- Inicialização ---
-        definirLayoutETamanho(selectLayoutPreset.value); // Pega o valor padrão do select
-        document.querySelectorAll('.item-arrastavel').forEach(inicializarInteracao);
-        btnRemoverItem.style.display = 'none';
-        popularModalSimbolos(); // Preenche o modal de símbolos
-        selectAddShape.selectedIndex = 0; // Garante que "Forma" esteja selecionado
+        definirLayoutETamanho(selectLayoutPreset.value); // Apply initial layout based on dropdown
+        document.querySelectorAll('.item-arrastavel').forEach(inicializarInteracao); // Initialize existing items (if any)
+        btnRemoverItem.style.display = 'none'; // Hide remove button initially
+        popularModalSimbolos(); // Populate the symbol modal
+        selectAddShape.selectedIndex = 0; // Ensure "Forma" placeholder is selected
+
+        // --- Listener para Deletar com Teclado (NOVO) ---
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                // Evita deletar se estiver digitando em um input ou texto
+                const target = e.target;
+                const isEditing = target.tagName === 'INPUT' || 
+                                  target.tagName === 'SELECT' || 
+                                  target.isContentEditable;
+
+                if (itemSelecionado && !isEditing) {
+                    e.preventDefault(); // Impede o navegador de voltar (Backspace)
+                    
+                    // Reutiliza a função de confirmação
+                    confirmPersonalizado("Tem certeza que deseja remover este item?", () => {
+                        itemSelecionado.remove();
+                        desselecionarItem();
+                    });
+                }
+            }
+        });
 
     </script>
 </body>
