@@ -124,6 +124,26 @@
             white-space: nowrap;
         }
         
+        /* Inputs numéricos na barra principal */
+        #toolbar input[type="number"].toolbar-input-number {
+            width: 60px; /* Mais curto */
+            background-color: #f8f9fa;
+            border: 1px solid #DADCE0;
+            color: #3c4043;
+            padding: 8px 5px; /* Menos padding lateral */
+            border-radius: 4px;
+            font-size: 0.9em;
+            height: 36px;
+            box-sizing: border-box;
+            -moz-appearance: textfield; /* Remove setas no Firefox */
+        }
+        #toolbar input[type="number"].toolbar-input-number::-webkit-outer-spin-button,
+        #toolbar input[type="number"].toolbar-input-number::-webkit-inner-spin-button {
+            -webkit-appearance: none; /* Remove setas no Chrome/Safari */
+            margin: 0;
+        }
+
+
         /* Botões de ícone (Negrito, Itálico, etc.) */
         .secondary-toolbar button {
              padding: 8px;
@@ -172,7 +192,8 @@
         #toolbar select:hover,
         .secondary-toolbar button:hover,
         .secondary-toolbar select:hover,
-        .secondary-toolbar input:hover {
+        .secondary-toolbar input:hover,
+        #toolbar input[type="number"].toolbar-input-number:hover {
             background-color: #f1f3f4;
             border-color: #c6cacf;
         }
@@ -222,6 +243,7 @@
             margin-right: var(--label-gap);
             margin-bottom: 0;
         }
+        /* Esta regra será sobreposta por JS dinâmico */
         #pagina-de-impressao.layout-dupla .etiqueta-editavel:nth-child(2n) {
             margin-right: 0;
         }
@@ -503,7 +525,8 @@
 
         /* --- Estilos de Impressão --- */
         #print-style-dynamic { display: none; }
-
+        
+        /* Bloco de impressão estático RESTAURADO */
         @media print {
             body {
                 background-color: #FFFFFF;
@@ -527,40 +550,15 @@
                 width: var(--print-page-width) !important;
             }
 
-            /* No layout duplo, ajusta margens para impressão */
-            #pagina-de-impressao.layout-dupla .etiqueta-editavel {
-                margin-right: var(--label-gap) !important;
-                page-break-after: avoid !important;
-                border: none !important;
-                box-shadow: none !important;
-                display: inline-block !important;
-                vertical-align: top !important;
-            }
-            #pagina-de-impressao.layout-dupla .etiqueta-editavel:nth-child(2n) {
-                margin-right: 0 !important;
-                page-break-after: always !important;
-            }
-            #pagina-de-impressao.layout-dupla .etiqueta-editavel:last-child {
-                page-break-after: avoid !important;
-            }
-            #pagina-de-impressao.layout-dupla .etiqueta-editavel:nth-child(odd):last-child {
-                page-break-after: avoid !important;
-            }
-
-            /* Layout simples (uma por linha) */
-            #pagina-de-impressao:not(.layout-dupla) .etiqueta-editavel {
-                page-break-after: always;
-                margin-right: 0 !important;
-                margin-bottom: 0 !important;
-            }
-            #pagina-de-impressao:not(.layout-dupla) .etiqueta-editavel:last-child {
-                page-break-after: avoid;
-            }
+            /* Regras de layout de impressão (margem/quebra) são movidas para #print-style-dynamic */
 
             .etiqueta-editavel {
                 border: none !important;
                 box-shadow: none !important;
-                margin-bottom: 0 !important;
+                /* margin-bottom: 0 !important; */ /* Controlado por JS */
+                display: inline-block !important; /* Chave para alinhamento */
+                vertical-align: top !important;
+                page-break-inside: avoid !important;
             }
 
             .item-arrastavel {
@@ -587,7 +585,12 @@
                 max-height: 100% !important;
             }
         }
+
     </style>
+    
+    <!-- Estilo dinâmico para tela (ex: colunas) - MOVIDO PARA FORA DO STYLE PRINCIPAL -->
+    <style id="screen-style-dynamic"></style>
+    
 </head>
 <body>
 
@@ -598,17 +601,30 @@
                 <button id="btn-add-etiqueta" title="Adicionar nova etiqueta à página">
                     <span class="material-icons">add_to_queue</span> Nova Etiqueta
                 </button>
+                <button id="btn-duplicar-etiqueta" title="Duplicar etiqueta selecionada">
+                    <span class="material-icons">content_copy</span> Duplicar
+                </button>
                 <button id="btn-imprimir" title="Imprimir página">
                     <span class="material-icons">print</span> Imprimir
                 </button>
-                <select id="select-tamanho-etiqueta" title="Selecionar tamanho e layout da etiqueta">
-                    <option value="100x50" selected>100 x 50 mm (Simples)</option>
-                    <option value="50x25">50 x 25 mm (Simples)</option>
-                    <option value="50x25-dupla">50 x 25 mm (Dupla)</option>
+            </div>
+            <div class="button-group">
+                <span class="label">Predefinições:</span>
+                <select id="select-layout-preset" title="Selecionar tamanho e layout da etiqueta">
+                    <option value="100x50" selected>100 x 50 mm (1 Col)</option>
+                    <option value="50x25">50 x 25 mm (1 Col)</option>
+                    <option value="50x25-dupla">50 x 25 mm (2 Col)</option>
+                    <option value="personalizado" disabled>--- Personalizado ---</option>
                 </select>
+                <span class="label">Larg. (mm):</span>
+                <input type="number" id="input-custom-width" value="100" class="toolbar-input-number">
+                <span class="label">Alt. (mm):</span>
+                <input type="number" id="input-custom-height" value="50" class="toolbar-input-number">
+                <span class="label">Colunas:</span>
+                <input type="number" id="input-custom-cols" value="1" min="1" max="10" class="toolbar-input-number" style="width: 45px;">
             </div>
         </div>
-        <div class="toolbar-section" style="overflow-x: auto; max-width: 65%;"> <!-- Permite rolagem nesta seção -->
+        <div class="toolbar-section" style="overflow-x: auto; max-width: 50%;"> <!-- Permite rolagem nesta seção -->
             <div class="button-group">
                 <span class="label">Adicionar:</span>
                 <button id="btn-add-texto" title="Adicionar caixa de texto">
@@ -764,6 +780,7 @@
 
     <!-- Estilo dinâmico para impressão -->
     <style id="print-style-dynamic"></style>
+    <!-- Estilo dinâmico para tela (ex: colunas) - JÁ ESTÁ FORA DO STYLE PRINCIPAL -->
 
     <script>
         // --- Chave da API de IA Removida ---
@@ -777,8 +794,15 @@
         const btnAddImagem = document.getElementById('btn-add-imagem');
         const btnRemoverItem = document.getElementById('btn-remover-item');
         const inputImagem = document.getElementById('input-imagem');
-        const selectTamanhoEtiqueta = document.getElementById('select-tamanho-etiqueta');
         const printStyleDynamic = document.getElementById('print-style-dynamic');
+        const screenStyleDynamic = document.getElementById('screen-style-dynamic'); // Novo
+
+        // --- Referências DOM (Layout e Duplicar) ---
+        const selectLayoutPreset = document.getElementById('select-layout-preset');
+        const btnDuplicarEtiqueta = document.getElementById('btn-duplicar-etiqueta');
+        const inputCustomWidth = document.getElementById('input-custom-width');
+        const inputCustomHeight = document.getElementById('input-custom-height');
+        const inputCustomCols = document.getElementById('input-custom-cols');
 
         // --- Referências DOM (Novas Ferramentas) ---
         const selectAddShape = document.getElementById('select-add-shape');
@@ -900,40 +924,111 @@
 
 
         // --- Funções de Gerenciamento de Layout e Tamanho ---
-        function definirLayoutETamanho(layoutValue) {
-            let width, height, printWidth, printHeight, pageMaxWidth;
-            const rootStyle = document.documentElement.style;
-
-            if (layoutValue === '100x50') {
-                layoutAtual = 'simples'; width = '100mm'; height = '50mm';
-            } else if (layoutValue === '50x25') {
-                layoutAtual = 'simples'; width = '50mm'; height = '25mm';
-            } else if (layoutValue === '50x25-dupla') {
-                layoutAtual = 'dupla'; width = '50mm'; height = '25mm';
-            } else { return; }
-
-            if (layoutAtual === 'simples') {
-                printWidth = width; printHeight = height; pageMaxWidth = width;
-                paginaDeImpressao.classList.remove('layout-dupla');
-            } else { // layout 'dupla'
-                printWidth = `calc(2 * ${width} + var(--label-gap))`;
-                printHeight = height; pageMaxWidth = printWidth;
-                paginaDeImpressao.classList.add('layout-dupla');
-            }
-
+        function aplicarLayout(width_mm, height_mm, colunas) {
+            const width = `${width_mm}mm`;
+            const height = `${height_mm}mm`;
+            
+            layoutAtual = (colunas > 1) ? 'multipla' : 'simples';
             tamanhoAtualEtiqueta = { width, height };
+            
+            const rootStyle = document.documentElement.style;
             rootStyle.setProperty('--label-width', width);
             rootStyle.setProperty('--label-height', height);
-            rootStyle.setProperty('--print-page-width', printWidth);
-            rootStyle.setProperty('--print-page-height', printHeight);
-            paginaDeImpressao.style.maxWidth = pageMaxWidth;
 
-            printStyleDynamic.innerHTML = `@media print { @page { size: ${printWidth} ${printHeight}; margin: 0; } }`;
+            // Calcular largura da página de impressão
+            let printWidth;
+            if (colunas === 1) {
+                printWidth = width;
+                paginaDeImpressao.classList.remove('layout-dupla'); // Usa 'layout-dupla' para lógica de gap
+            } else {
+                printWidth = `calc(${colunas} * ${width} + (${colunas - 1}) * var(--label-gap))`;
+                paginaDeImpressao.classList.add('layout-dupla'); 
+            }
+            
+            rootStyle.setProperty('--print-page-width', printWidth);
+            rootStyle.setProperty('--print-page-height', height);
+            paginaDeImpressao.style.maxWidth = printWidth;
+
+            // Atualiza o estilo de impressão dinâmico
+            printStyleDynamic.innerHTML = `
+                @media print { 
+                    @page { 
+                        size: ${printWidth} ${height}; 
+                        margin: 0; 
+                    }
+                    
+                    /* Lógica de margem e quebra de página */
+                    .etiqueta-editavel {
+                        margin-right: var(--label-gap) !important;
+                        margin-bottom: 5mm !important; /* Espaço entre linhas */
+                    }
+                    /* Remove margem do último item da linha */
+                    .etiqueta-editavel:nth-child(${colunas}n) {
+                        margin-right: 0 !important;
+                    }
+                    /* Força quebra APÓS a linha, mas não no último item */
+                    .etiqueta-editavel:nth-child(${colunas}n):not(:last-child) {
+                         page-break-after: always !important;
+                    }
+                    /* Evita quebras desnecessárias no final */
+                    .etiqueta-editavel:last-child,
+                    .etiqueta-editavel:nth-child(${colunas}n):last-child {
+                        page-break-after: avoid !important;
+                    }
+                }
+            `;
+            
+            // Atualiza estilo de tela dinâmico (para gaps corretos)
+            if (colunas > 1) {
+                 screenStyleDynamic.innerHTML = `
+                    #pagina-de-impressao.layout-dupla .etiqueta-editavel:nth-child(${colunas}n) {
+                         margin-right: 0;
+                    }
+                 `;
+            } else {
+                 screenStyleDynamic.innerHTML = ''; // Limpa se for coluna única
+            }
+
+            // Atualiza o select de preset para "personalizado" se os valores não baterem
+            if ( (width_mm == 100 && height_mm == 50 && colunas == 1) ) {
+                selectLayoutPreset.value = '100x50';
+            } else if ( (width_mm == 50 && height_mm == 25 && colunas == 1) ) {
+                selectLayoutPreset.value = '50x25';
+            } else if ( (width_mm == 50 && height_mm == 25 && colunas == 2) ) {
+                selectLayoutPreset.value = '50x25-dupla';
+            } else {
+                selectLayoutPreset.value = 'personalizado';
+            }
+        }
+        
+        function definirLayoutETamanho(layoutValue) {
+            let width_mm, height_mm, colunas;
+            
+            if (layoutValue === '100x50') {
+                width_mm = 100; height_mm = 50; colunas = 1;
+            } else if (layoutValue === '50x25') {
+                width_mm = 50; height_mm = 25; colunas = 1;
+            } else if (layoutValue === '50x25-dupla') {
+                width_mm = 50; height_mm = 25; colunas = 2;
+            } else {
+                // Se for "personalizado" ou outro, não faz nada,
+                // deixa o usuário digitar.
+                return; 
+            }
+
+            // Atualiza os inputs
+            inputCustomWidth.value = width_mm;
+            inputCustomHeight.value = height_mm;
+            inputCustomCols.value = colunas;
+
+            // Aplica o layout
+            aplicarLayout(width_mm, height_mm, colunas);
         }
 
 
         // --- Funções de Adição de Itens ---
 
+        // Adiciona uma nova etiqueta
         function adicionarEtiqueta() {
             if (isDrawing) pararModoDesenho(false);
             const novaEtiqueta = document.createElement('div');
@@ -943,6 +1038,34 @@
             definirEtiquetaAtiva(novaEtiqueta);
         }
 
+        // Função para duplicar a etiqueta ativa
+        function duplicarEtiqueta() {
+            if (isDrawing) pararModoDesenho(false);
+            if (!etiquetaAtiva) {
+                alertPersonalizado("Por favor, selecione a etiqueta que deseja duplicar.");
+                return;
+            }
+
+            const clone = etiquetaAtiva.cloneNode(true);
+            clone.classList.remove('active');
+            clone.dataset.labelId = gerarLabelId();
+            
+            // Insere após a etiqueta ativa
+            etiquetaAtiva.insertAdjacentElement('afterend', clone);
+
+            // IMPORTANTE: Reinicializa a interação para todos os itens clonados
+            clone.querySelectorAll('.item-arrastavel').forEach(item => {
+                // Limpa dados de interação antigos do interact.js se existirem
+                // (O cloneNode não copia listeners, mas é bom garantir)
+                inicializarInteracao(item);
+            });
+
+            // Define a nova etiqueta clonada como ativa
+            definirEtiquetaAtiva(clone);
+        }
+
+
+        // Adiciona um item genérico (configura posição, tamanho e interação)
         function adicionarItem(etiqueta, tipo, conteudo = null) {
             if (!etiqueta) {
                 alertPersonalizado("Selecione uma etiqueta primeiro!");
@@ -1303,6 +1426,7 @@
         // --- Event Listeners da Toolbar (Principal) ---
 
         btnAddEtiqueta.addEventListener('click', adicionarEtiqueta);
+        btnDuplicarEtiqueta.addEventListener('click', duplicarEtiqueta); // Novo listener
         
         btnImprimir.addEventListener('click', () => {
             desselecionarItem();
@@ -1414,10 +1538,23 @@
         });
 
         // --- Listener para Mudança de Tamanho/Layout ---
-        selectTamanhoEtiqueta.addEventListener('change', (event) => {
+        selectLayoutPreset.addEventListener('change', (event) => {
             if (isDrawing) pararModoDesenho(false);
             definirLayoutETamanho(event.target.value);
         });
+        
+        // Listeners para inputs de layout personalizado
+        function handleCustomLayoutChange() {
+            const w = inputCustomWidth.value;
+            const h = inputCustomHeight.value;
+            const c = parseInt(inputCustomCols.value, 10);
+            if (w > 0 && h > 0 && c > 0) {
+                aplicarLayout(w, h, c);
+            }
+        }
+        inputCustomWidth.addEventListener('change', handleCustomLayoutChange);
+        inputCustomHeight.addEventListener('change', handleCustomLayoutChange);
+        inputCustomCols.addEventListener('change', handleCustomLayoutChange);
         
         
         // --- Event Listeners da Barra de Texto ---
@@ -1680,7 +1817,7 @@
 
 
         // --- Inicialização ---
-        definirLayoutETamanho(selectTamanhoEtiqueta.value);
+        definirLayoutETamanho(selectLayoutPreset.value); // Pega o valor padrão do select
         document.querySelectorAll('.item-arrastavel').forEach(inicializarInteracao);
         btnRemoverItem.style.display = 'none';
         popularModalSimbolos(); // Preenche o modal de símbolos
